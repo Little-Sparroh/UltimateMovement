@@ -7,7 +7,8 @@ using System.Collections.Generic;
 using System.Reflection;
 using UnityEngine;
 
-[BepInPlugin("yourname.mycopunk.ultimatemovement", "UltimateMovement", "1.0.0")]
+[BepInPlugin("yourname.mycopunk.firewhilesprinting", "FireWhileSprinting", "1.0.0")]
+[MycoMod(null, ModFlags.IsClientSide)]
 public class FreeFireMod : BaseUnityPlugin
 {
     private Harmony harmony;
@@ -60,13 +61,13 @@ public class FreeFireMod : BaseUnityPlugin
 
     private void Awake()
     {
-        var harmony = new Harmony("yourname.mycopunk.ultimatemovement");
+        var harmony = new Harmony("yourname.mycopunk.firewhilesprinting");
 
         // Setup patch
         MethodInfo setupMethod = AccessTools.Method(typeof(Gun), "Setup", new Type[] { typeof(Player), typeof(PlayerAnimation), typeof(IGear) });
         if (setupMethod == null)
         {
-            //Logger.LogError("Could not find Gun.Setup method!");
+            Logger.LogError("Could not find Gun.Setup method!");
             return;
         }
         HarmonyMethod prefix = new HarmonyMethod(typeof(Patches), nameof(Patches.ModifyWeaponPrefix));
@@ -76,7 +77,7 @@ public class FreeFireMod : BaseUnityPlugin
         MethodInfo onStartAimMethod = AccessTools.Method(typeof(Gun), "OnStartAim");
         if (onStartAimMethod == null)
         {
-            //Logger.LogError("Could not find Gun.OnStartAim method!");
+            Logger.LogError("Could not find Gun.OnStartAim method!");
             return;
         }
         HarmonyMethod onStartAimPrefix = new HarmonyMethod(typeof(Patches), nameof(Patches.OnStartAimPrefix));
@@ -87,11 +88,21 @@ public class FreeFireMod : BaseUnityPlugin
         MethodInfo canAimMethod = AccessTools.Method(typeof(Gun), "CanAim");
         if (canAimMethod == null)
         {
-            //Logger.LogError("Could not find Gun.CanAim method!");
+            Logger.LogError("Could not find Gun.CanAim method!");
             return;
         }
         HarmonyMethod canAimPrefix = new HarmonyMethod(typeof(Patches), nameof(Patches.CanAimPrefix));
         harmony.Patch(canAimMethod, prefix: canAimPrefix);
+
+        // Patch Gun.HandleFiring to allow tap firing while sprinting
+        MethodInfo handleFiringMethod = AccessTools.Method(typeof(Gun), "HandleFiring");
+        if (handleFiringMethod == null)
+        {
+            Logger.LogError("Could not find Gun.HandleFiring method!");
+            return;
+        }
+        HarmonyMethod handleFiringPrefix = new HarmonyMethod(typeof(Patches), nameof(Patches.HandleFiringPrefix));
+        harmony.Patch(handleFiringMethod, prefix: handleFiringPrefix);
 
         // New patch for forcing wallrun
         MethodInfo getterMethod = AccessTools.PropertyGetter(typeof(Player), "EnableWallrun");
@@ -121,13 +132,13 @@ static class Patches
     {
         ManualLogSource log = BepInEx.Logging.Logger.CreateLogSource("FreeFireMod");
 
-        //log.LogInfo($"Processing gun in Setup: {__instance.gameObject.name}");
+        log.LogInfo($"Processing gun in Setup: {__instance.gameObject.name}");
 
         // Single type detection (still uses if-else, but only once)
         FreeFireMod.GunType gunType = DetermineGunType(__instance);
         if (gunType == FreeFireMod.GunType.Unknown)
         {
-            //log.LogInfo($"Skipped gun: Name = {__instance.gameObject.name}, Type = {__instance.GetType().Name}");
+            log.LogInfo($"Skipped gun: Name = {__instance.gameObject.name}, Type = {__instance.GetType().Name}");
             return;
         }
 
@@ -169,7 +180,7 @@ static class Patches
         // Lookup mod data (O(1) dictionary access)
         if (!FreeFireMod.GunMods.TryGetValue(gunType, out var mods))
         {
-            //log.LogWarning($"No mod data found for {gunName}!");
+            log.LogWarning($"No mod data found for {gunName}!");
             return;
         }
 
@@ -258,6 +269,33 @@ static class Patches
                     {
                         __result = true;
                         return false; // Skip original to avoid stop sprint
+                    }
+                }
+            }
+        }
+        return true; // Run original
+    }
+
+    public static bool HandleFiringPrefix(Gun __instance)
+    {
+        var modGunData = __instance.gameObject.GetComponent<ModGunData>();
+        if (modGunData != null && modGunData.CanAimWhileSprinting == 1)
+        {
+            FieldInfo playerField = AccessTools.Field(typeof(Gun), "player");
+            Player player = (Player)playerField.GetValue(__instance);
+            if (player != null)
+            {
+                PropertyInfo isSprintingProp = AccessTools.Property(typeof(Player), "IsSprinting");
+                if (isSprintingProp != null && (bool)isSprintingProp.GetValue(player))
+                {
+                    if (PlayerInput.Controls.Player.Fire.WasPressedThisFrame())
+                    {
+                        MethodInfo fireMethod = AccessTools.Method(typeof(Gun), "Fire");
+                        if (fireMethod != null)
+                        {
+                            fireMethod.Invoke(__instance, null);
+                        }
+                        return false; // Skip original to avoid delay
                     }
                 }
             }
