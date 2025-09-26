@@ -7,8 +7,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using UnityEngine;
 
-[BepInPlugin("yourname.mycopunk.firewhilesprinting", "FireWhileSprinting", "1.0.0")]
-[MycoMod(null, ModFlags.IsClientSide)]
+[BepInPlugin("yourname.mycopunk.ultimatemovement", "UltimateMovement", "1.0.0")]
 public class FreeFireMod : BaseUnityPlugin
 {
     private Harmony harmony;
@@ -36,82 +35,107 @@ public class FreeFireMod : BaseUnityPlugin
     {
         public int CanFireWhileSprinting { get; set; }
         public int CanFireWhileSliding { get; set; }
+        public int CanAimWhileSliding { get; set; }
+        public int CanAimWhileReloading { get; set; }
+        public int CanAimWhileSprinting { get; set; } // New field for the added functionality
     }
 
     // Dictionary mapping gun types to their mod data (data-driven, easy to extend)
     // Made public static to allow access from Patches class
     public static readonly Dictionary<GunType, GunModData> GunMods = new()
     {
-        { GunType.Cycler, new GunModData { CanFireWhileSprinting = 1, CanFireWhileSliding = 1 } },
-        { GunType.Jackrabbit, new GunModData { CanFireWhileSprinting = 1, CanFireWhileSliding = 1 } },
-        { GunType.SwarmLauncher, new GunModData { CanFireWhileSprinting = 1, CanFireWhileSliding = 1 } },
-        { GunType.DMLR, new GunModData { CanFireWhileSprinting = 1, CanFireWhileSliding = 1 } },
-        { GunType.PlateLauncher, new GunModData { CanFireWhileSprinting = 1, CanFireWhileSliding = 1 } },
-        { GunType.LeadFlinger, new GunModData { CanFireWhileSprinting = 1, CanFireWhileSliding = 1 } },
-        { GunType.Gunship, new GunModData { CanFireWhileSprinting = 1, CanFireWhileSliding = 1 } },
-        { GunType.Trident, new GunModData { CanFireWhileSprinting = 1, CanFireWhileSliding = 1 } },
-        { GunType.Globbler, new GunModData { CanFireWhileSprinting = 1, CanFireWhileSliding = 1 } },
-        { GunType.Carver, new GunModData { CanFireWhileSprinting = 1, CanFireWhileSliding = 1 } },
-        { GunType.Shocklance, new GunModData { CanFireWhileSprinting = 1, CanFireWhileSliding = 1 } }
+        { GunType.Cycler, new GunModData { CanFireWhileSprinting = 1, CanFireWhileSliding = 1, CanAimWhileSliding = 1, CanAimWhileReloading = 1, CanAimWhileSprinting = 1 } },
+        { GunType.Jackrabbit, new GunModData { CanFireWhileSprinting = 1, CanFireWhileSliding = 1, CanAimWhileSliding = 1, CanAimWhileReloading = 1, CanAimWhileSprinting = 1 } },
+        { GunType.SwarmLauncher, new GunModData { CanFireWhileSprinting = 1, CanFireWhileSliding = 1, CanAimWhileSliding = 1, CanAimWhileReloading = 1, CanAimWhileSprinting = 1 } },
+        { GunType.DMLR, new GunModData { CanFireWhileSprinting = 1, CanFireWhileSliding = 1, CanAimWhileSliding = 1, CanAimWhileReloading = 1, CanAimWhileSprinting = 1 } },
+        { GunType.PlateLauncher, new GunModData { CanFireWhileSprinting = 1, CanFireWhileSliding = 1, CanAimWhileSliding = 1, CanAimWhileReloading = 1, CanAimWhileSprinting = 1 } },
+        { GunType.LeadFlinger, new GunModData { CanFireWhileSprinting = 1, CanFireWhileSliding = 1, CanAimWhileSliding = 1, CanAimWhileReloading = 1, CanAimWhileSprinting = 1 } },
+        { GunType.Gunship, new GunModData { CanFireWhileSprinting = 1, CanFireWhileSliding = 1, CanAimWhileSliding = 1, CanAimWhileReloading = 1, CanAimWhileSprinting = 1 } },
+        { GunType.Trident, new GunModData { CanFireWhileSprinting = 1, CanFireWhileSliding = 1, CanAimWhileSliding = 1, CanAimWhileReloading = 1, CanAimWhileSprinting = 1 } },
+        { GunType.Globbler, new GunModData { CanFireWhileSprinting = 1, CanFireWhileSliding = 1, CanAimWhileSliding = 1, CanAimWhileReloading = 1, CanAimWhileSprinting = 1 } },
+        { GunType.Carver, new GunModData { CanFireWhileSprinting = 1, CanFireWhileSliding = 1, CanAimWhileSliding = 1, CanAimWhileReloading = 1, CanAimWhileSprinting = 1 } },
+        { GunType.Shocklance, new GunModData { CanFireWhileSprinting = 1, CanFireWhileSliding = 1, CanAimWhileSliding = 1, CanAimWhileReloading = 1, CanAimWhileSprinting = 1 } }
         // Extend as needed for other guns
     };
 
     private void Awake()
     {
-        var harmony = new Harmony("yourname.mycopunk.firewhilesprinting");
+        var harmony = new Harmony("yourname.mycopunk.ultimatemovement");
 
         // Setup patch
         MethodInfo setupMethod = AccessTools.Method(typeof(Gun), "Setup", new Type[] { typeof(Player), typeof(PlayerAnimation), typeof(IGear) });
         if (setupMethod == null)
         {
-            Logger.LogError("Could not find Gun.Setup method!");
+            //Logger.LogError("Could not find Gun.Setup method!");
             return;
         }
         HarmonyMethod prefix = new HarmonyMethod(typeof(Patches), nameof(Patches.ModifyWeaponPrefix));
         harmony.Patch(setupMethod, prefix: prefix);
 
-        // Update patch to restore animations
-        MethodInfo updateMethod = AccessTools.Method(typeof(Gun), "Update");
-        if (updateMethod == null)
+        // Patch OnStartAim to handle sprint resume
+        MethodInfo onStartAimMethod = AccessTools.Method(typeof(Gun), "OnStartAim");
+        if (onStartAimMethod == null)
         {
-            Logger.LogError("Could not find Gun.Update method!");
+            //Logger.LogError("Could not find Gun.OnStartAim method!");
             return;
         }
-        HarmonyMethod updatePostfix = new HarmonyMethod(typeof(Patches), nameof(Patches.UpdatePostfix));
-        harmony.Patch(updateMethod, postfix: updatePostfix);
+        HarmonyMethod onStartAimPrefix = new HarmonyMethod(typeof(Patches), nameof(Patches.OnStartAimPrefix));
+        HarmonyMethod onStartAimPostfix = new HarmonyMethod(typeof(Patches), nameof(Patches.OnStartAimPostfix));
+        harmony.Patch(onStartAimMethod, prefix: onStartAimPrefix, postfix: onStartAimPostfix);
 
-        // OnFiredBullet patch for piercing
-        MethodInfo firedBulletMethod = AccessTools.Method(typeof(Gun), "OnFiredBullet");
-        if (firedBulletMethod == null)
+        // Patch Gun.CanAim to skip sprint check
+        MethodInfo canAimMethod = AccessTools.Method(typeof(Gun), "CanAim");
+        if (canAimMethod == null)
         {
-            Logger.LogError("Could not find Gun.OnFiredBullet method!");
+            //Logger.LogError("Could not find Gun.CanAim method!");
             return;
         }
-        HarmonyMethod postfixFired = new HarmonyMethod(typeof(Patches), nameof(Patches.AddPiercingMultiHits));
-        harmony.Patch(firedBulletMethod, postfix: postfixFired);
+        HarmonyMethod canAimPrefix = new HarmonyMethod(typeof(Patches), nameof(Patches.CanAimPrefix));
+        harmony.Patch(canAimMethod, prefix: canAimPrefix);
+
+        // New patch for forcing wallrun
+        MethodInfo getterMethod = AccessTools.PropertyGetter(typeof(Player), "EnableWallrun");
+        if (getterMethod == null)
+        {
+            //Logger.LogError("Could not find Player.EnableWallrun getter!");
+            return;
+        }
+        HarmonyMethod wallrunPrefix = new HarmonyMethod(typeof(Patches), nameof(Patches.EnableWallrunGetPrefix));
+        harmony.Patch(getterMethod, prefix: wallrunPrefix);
 
         Logger.LogInfo($"{harmony.Id} loaded!");
     }
 }
 
+public class ModGunData : MonoBehaviour
+{
+    public int CanAimWhileSprinting { get; set; }
+    public bool WasSprinting { get; set; } // Temporary storage for sprint state
+}
+
 static class Patches
 {
+    private static readonly FieldInfo lockSprintingField = AccessTools.Field(typeof(Gun), "lockSprinting");
+
     public static void ModifyWeaponPrefix(Gun __instance, IGear prefab)
     {
         ManualLogSource log = BepInEx.Logging.Logger.CreateLogSource("FreeFireMod");
 
-        log.LogInfo($"Processing gun in Setup: {__instance.gameObject.name}");
+        //log.LogInfo($"Processing gun in Setup: {__instance.gameObject.name}");
 
         // Single type detection (still uses if-else, but only once)
         FreeFireMod.GunType gunType = DetermineGunType(__instance);
         if (gunType == FreeFireMod.GunType.Unknown)
         {
-            log.LogInfo($"Skipped gun: Name = {__instance.gameObject.name}, Type = {__instance.GetType().Name}");
+            //log.LogInfo($"Skipped gun: Name = {__instance.gameObject.name}, Type = {__instance.GetType().Name}");
             return;
         }
 
+        // Add custom component to the gun instance for extended data
+        var modGunData = __instance.gameObject.AddComponent<ModGunData>();
+
         // Single merged method call for all base stat modifications
-        ModifyGunBaseStats(prefab, gunType, log);
+        ModifyGunBaseStats(prefab, gunType, log, modGunData);
     }
 
     // Helper to determine type (could be optimized further with a dictionary of name/type pairs if needed)
@@ -135,7 +159,7 @@ static class Patches
 
     // Single merged method: Applies all base stat mods based on type
     // This replaces all the individual ModifyXXX methods, reducing method call overhead and code duplication
-    private static void ModifyGunBaseStats(IGear prefab, FreeFireMod.GunType gunType, ManualLogSource log)
+    private static void ModifyGunBaseStats(IGear prefab, FreeFireMod.GunType gunType, ManualLogSource log, ModGunData modGunData)
     {
         if (prefab == null || prefab is not Gun gunPrefab) return;
 
@@ -145,7 +169,7 @@ static class Patches
         // Lookup mod data (O(1) dictionary access)
         if (!FreeFireMod.GunMods.TryGetValue(gunType, out var mods))
         {
-            log.LogWarning($"No mod data found for {gunName}!");
+            //log.LogWarning($"No mod data found for {gunName}!");
             return;
         }
 
@@ -158,43 +182,96 @@ static class Patches
         gunData.fireConstraints.canFireWhileSliding = (FireConstraints.ActionFireMode)mods.CanFireWhileSliding;
         log.LogInfo($"Modified {gunName} canFireWhileSliding: Original {originalSlide}, New {gunData.fireConstraints.canFireWhileSliding}");
 
+        var originalAimSlide = gunData.fireConstraints.canAimWhileSliding;
+        gunData.fireConstraints.canAimWhileSliding = (FireConstraints.ActionFireMode)mods.CanAimWhileSliding;
+        log.LogInfo($"Modified {gunName} canAimWhileSliding: Original {originalAimSlide}, New {gunData.fireConstraints.canAimWhileSliding}");
+
+        var originalAimReload = gunData.fireConstraints.canAimWhileReloading;
+        gunData.fireConstraints.canAimWhileReloading = mods.CanAimWhileReloading != 0;
+        log.LogInfo($"Modified {gunName} canAimWhileReloading: Original {originalAimReload}, New {gunData.fireConstraints.canAimWhileReloading}");
+
+        // Set custom CanAimWhileSprinting on the component
+        modGunData.CanAimWhileSprinting = mods.CanAimWhileSprinting;
+        log.LogInfo($"Modified {gunName} canAimWhileSprinting (custom): New {mods.CanAimWhileSprinting}");
+
+        // Override lockSprinting to allow aiming while sprinting if enabled (reflection for private field)
+        bool lockSprintingValue = (mods.CanAimWhileSprinting != 1); // false if allowing (assuming 1 == CanPerformDuring)
+        lockSprintingField.SetValue(gunPrefab, lockSprintingValue);
+        log.LogInfo($"Modified {gunName} lockSprinting: New {lockSprintingValue}");
+
         log.LogInfo($"Completed base stat modifications for {gunName}");
     }
 
-    public static void UpdatePostfix(Gun __instance)
+    public static bool OnStartAimPrefix(Gun __instance)
     {
-        ManualLogSource log = BepInEx.Logging.Logger.CreateLogSource("FreeFireMod");
-
-        FieldInfo playerField = AccessTools.Field(typeof(Gun), "player");
-        FieldInfo animatorField = AccessTools.Field(typeof(Gun), "animator");
-
-        Player player = (Player)playerField.GetValue(__instance);
-        PlayerAnimation animator = (PlayerAnimation)animatorField.GetValue(__instance);
-
-        PropertyInfo isSprintingProp = AccessTools.Property(typeof(Player), "IsSprinting");
-        bool isSprinting = (bool)isSprintingProp.GetValue(player);
-
-        PropertyInfo slidingProp = AccessTools.Property(typeof(Player), "Sliding");
-        bool isSliding = (bool)slidingProp.GetValue(player);
-
-        FieldInfo runningField = AccessTools.Field(typeof(PlayerAnimation), "Running");
-        if (isSprinting && (int)runningField.GetValue(animator) != 2)
+        var modGunData = __instance.gameObject.GetComponent<ModGunData>();
+        if (modGunData != null && modGunData.CanAimWhileSprinting == 1)
         {
-            runningField.SetValue(animator, 2);
-            log.LogInfo("Restored sprint animation");
+            FieldInfo playerField = AccessTools.Field(typeof(Gun), "player");
+            Player player = (Player)playerField.GetValue(__instance);
+            if (player != null)
+            {
+                PropertyInfo isSprintingProp = AccessTools.Property(typeof(Player), "IsSprinting");
+                if (isSprintingProp != null)
+                {
+                    modGunData.WasSprinting = (bool)isSprintingProp.GetValue(player);
+                }
+            }
         }
+        return true; // Run original
+    }
 
-        FieldInfo slidingAnimField = AccessTools.Field(typeof(PlayerAnimation), "Sliding");
-        if (isSliding && !(bool)slidingAnimField.GetValue(animator))
+    public static void OnStartAimPostfix(Gun __instance)
+    {
+        var modGunData = __instance.gameObject.GetComponent<ModGunData>();
+        if (modGunData != null && modGunData.CanAimWhileSprinting == 1 && modGunData.WasSprinting)
         {
-            slidingAnimField.SetValue(animator, true);
-            log.LogInfo("Restored slide animation");
+            FieldInfo playerField = AccessTools.Field(typeof(Gun), "player");
+            Player player = (Player)playerField.GetValue(__instance);
+            if (player != null)
+            {
+                MethodInfo resumeSprintMethod = AccessTools.Method(typeof(Player), "ResumeSprint");
+                if (resumeSprintMethod != null)
+                {
+                    resumeSprintMethod.Invoke(player, null);
+                }
+            }
+            modGunData.WasSprinting = false; // Reset
         }
     }
 
-    // Your existing AddPiercingMultiHits method (unchanged)
-    public static void AddPiercingMultiHits(Gun __instance /* Add other params as needed */)
+    public static bool CanAimPrefix(Gun __instance, ref bool __result)
     {
-        // Implementation here (you didn't provide it, but assuming it's there)
+        var modGunData = __instance.gameObject.GetComponent<ModGunData>();
+        if (modGunData != null && modGunData.CanAimWhileSprinting == 1)
+        {
+            FieldInfo playerField = AccessTools.Field(typeof(Gun), "player");
+            Player player = (Player)playerField.GetValue(__instance);
+            if (player != null)
+            {
+                PropertyInfo isSprintingProp = AccessTools.Property(typeof(Player), "IsSprinting");
+                if (isSprintingProp != null && (bool)isSprintingProp.GetValue(player))
+                {
+                    FieldInfo isAimInputHeldField = AccessTools.Field(typeof(Gun), "isAimInputHeld");
+                    bool isAimInputHeld = isAimInputHeldField != null ? (bool)isAimInputHeldField.GetValue(__instance) : false;
+                    if (isAimInputHeld)
+                    {
+                        __result = true;
+                        return false; // Skip original to avoid stop sprint
+                    }
+                }
+            }
+        }
+        return true; // Run original
+    }
+
+    // New prefix for EnableWallrun getter
+    public static bool EnableWallrunGetPrefix(Player __instance, ref bool __result)
+    {
+        if (!__instance.IsLocalPlayer) return true;
+
+        __result = true;
+        //log.LogInfo("Forced EnableWallrun to true for local player.");
+        return false; // Skip original getter
     }
 }

@@ -3,8 +3,8 @@ schemaVersion = "0.0.1"
 
 [package]
 namespace = "Sparroh"
-name = "FireWhileSprinting"
-description = "*WARNING* (This is a cheat mod) Enables ability to Fire while Sprinting and Sliding for fluid gameplay."
+name = "UltimateMovement"
+description = "*WARNING* (This is a cheat mod) Enables ability to Fire and Aim while Sprinting and Sliding for fluid gameplay. Also enables Aim while Reloading and Wallrunning."
 websiteUrl = "https://github.com/Little-Sparroh/FireWhileSprinting"
 containsNsfwContent = false
 
@@ -17,8 +17,8 @@ readme = "README.md"
 outdir = "build"
 
 [[build.copy]]
-source = "bin/Release/net48/FireWhileSprinting.dll"
-target = "BepInEx/plugins/FireWhileSprinting.dll"
+source = "bin/Release/net48/UltimateMovement.dll"
+target = "BepInEx/plugins/UltimateMovement.dll"
 
 [[build.copy]]
 source = "CHANGELOG.md"
