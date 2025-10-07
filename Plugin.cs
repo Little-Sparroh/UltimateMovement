@@ -7,13 +7,16 @@ using System.Collections.Generic;
 using System.Reflection;
 using UnityEngine;
 
-[BepInPlugin("yourname.mycopunk.firewhilesprinting", "FireWhileSprinting", "1.0.0")]
+[BepInPlugin(PluginGUID, PluginName, PluginVersion)]
 [MycoMod(null, ModFlags.IsClientSide)]
 public class FreeFireMod : BaseUnityPlugin
 {
+    public const string PluginGUID = "sparroh.ultimatemovement";
+    public const string PluginName = "UltimateMovement";
+    public const string PluginVersion = "1.0.2";
+
     private Harmony harmony;
 
-    // Enum for gun types to avoid string checks in switch
     public enum GunType
     {
         Unknown,
@@ -31,18 +34,15 @@ public class FreeFireMod : BaseUnityPlugin
         // Add more as needed
     }
 
-    // Data structure for all modifiable stats per gun type
     public struct GunModData
     {
         public int CanFireWhileSprinting { get; set; }
         public int CanFireWhileSliding { get; set; }
         public int CanAimWhileSliding { get; set; }
         public int CanAimWhileReloading { get; set; }
-        public int CanAimWhileSprinting { get; set; } // New field for the added functionality
+        public int CanAimWhileSprinting { get; set; }
     }
 
-    // Dictionary mapping gun types to their mod data (data-driven, easy to extend)
-    // Made public static to allow access from Patches class
     public static readonly Dictionary<GunType, GunModData> GunMods = new()
     {
         { GunType.Cycler, new GunModData { CanFireWhileSprinting = 1, CanFireWhileSliding = 1, CanAimWhileSliding = 1, CanAimWhileReloading = 1, CanAimWhileSprinting = 1 } },
@@ -61,9 +61,8 @@ public class FreeFireMod : BaseUnityPlugin
 
     private void Awake()
     {
-        var harmony = new Harmony("yourname.mycopunk.firewhilesprinting");
+        var harmony = new Harmony(PluginGUID);
 
-        // Setup patch
         MethodInfo setupMethod = AccessTools.Method(typeof(Gun), "Setup", new Type[] { typeof(Player), typeof(PlayerAnimation), typeof(IGear) });
         if (setupMethod == null)
         {
@@ -73,7 +72,6 @@ public class FreeFireMod : BaseUnityPlugin
         HarmonyMethod prefix = new HarmonyMethod(typeof(Patches), nameof(Patches.ModifyWeaponPrefix));
         harmony.Patch(setupMethod, prefix: prefix);
 
-        // Patch OnStartAim to handle sprint resume
         MethodInfo onStartAimMethod = AccessTools.Method(typeof(Gun), "OnStartAim");
         if (onStartAimMethod == null)
         {
@@ -84,7 +82,6 @@ public class FreeFireMod : BaseUnityPlugin
         HarmonyMethod onStartAimPostfix = new HarmonyMethod(typeof(Patches), nameof(Patches.OnStartAimPostfix));
         harmony.Patch(onStartAimMethod, prefix: onStartAimPrefix, postfix: onStartAimPostfix);
 
-        // Patch Gun.CanAim to skip sprint check
         MethodInfo canAimMethod = AccessTools.Method(typeof(Gun), "CanAim");
         if (canAimMethod == null)
         {
@@ -94,34 +91,22 @@ public class FreeFireMod : BaseUnityPlugin
         HarmonyMethod canAimPrefix = new HarmonyMethod(typeof(Patches), nameof(Patches.CanAimPrefix));
         harmony.Patch(canAimMethod, prefix: canAimPrefix);
 
-        // Patch Gun.HandleFiring to allow tap firing while sprinting
-        MethodInfo handleFiringMethod = AccessTools.Method(typeof(Gun), "HandleFiring");
-        if (handleFiringMethod == null)
-        {
-            Logger.LogError("Could not find Gun.HandleFiring method!");
-            return;
-        }
-        HarmonyMethod handleFiringPrefix = new HarmonyMethod(typeof(Patches), nameof(Patches.HandleFiringPrefix));
-        harmony.Patch(handleFiringMethod, prefix: handleFiringPrefix);
-
-        // New patch for forcing wallrun
         MethodInfo getterMethod = AccessTools.PropertyGetter(typeof(Player), "EnableWallrun");
         if (getterMethod == null)
         {
-            //Logger.LogError("Could not find Player.EnableWallrun getter!");
             return;
         }
         HarmonyMethod wallrunPrefix = new HarmonyMethod(typeof(Patches), nameof(Patches.EnableWallrunGetPrefix));
         harmony.Patch(getterMethod, prefix: wallrunPrefix);
 
-        Logger.LogInfo($"{harmony.Id} loaded!");
+        Logger.LogInfo($"{PluginName} loaded successfully.");
     }
 }
 
 public class ModGunData : MonoBehaviour
 {
     public int CanAimWhileSprinting { get; set; }
-    public bool WasSprinting { get; set; } // Temporary storage for sprint state
+    public bool WasSprinting { get; set; }
 }
 
 static class Patches
@@ -134,7 +119,6 @@ static class Patches
 
         log.LogInfo($"Processing gun in Setup: {__instance.gameObject.name}");
 
-        // Single type detection (still uses if-else, but only once)
         FreeFireMod.GunType gunType = DetermineGunType(__instance);
         if (gunType == FreeFireMod.GunType.Unknown)
         {
@@ -142,14 +126,11 @@ static class Patches
             return;
         }
 
-        // Add custom component to the gun instance for extended data
         var modGunData = __instance.gameObject.AddComponent<ModGunData>();
 
-        // Single merged method call for all base stat modifications
         ModifyGunBaseStats(prefab, gunType, log, modGunData);
     }
 
-    // Helper to determine type (could be optimized further with a dictionary of name/type pairs if needed)
     private static FreeFireMod.GunType DetermineGunType(Gun gun)
     {
         string name = gun.gameObject.name.ToUpperInvariant();
@@ -168,23 +149,19 @@ static class Patches
         return FreeFireMod.GunType.Unknown;
     }
 
-    // Single merged method: Applies all base stat mods based on type
-    // This replaces all the individual ModifyXXX methods, reducing method call overhead and code duplication
     private static void ModifyGunBaseStats(IGear prefab, FreeFireMod.GunType gunType, ManualLogSource log, ModGunData modGunData)
     {
         if (prefab == null || prefab is not Gun gunPrefab) return;
 
         ref var gunData = ref gunPrefab.GunData;
-        string gunName = gunType.ToString(); // For logging
+        string gunName = gunType.ToString();
 
-        // Lookup mod data (O(1) dictionary access)
         if (!FreeFireMod.GunMods.TryGetValue(gunType, out var mods))
         {
             log.LogWarning($"No mod data found for {gunName}!");
             return;
         }
 
-        // Fire constraints modifications
         var originalSprint = gunData.fireConstraints.canFireWhileSprinting;
         gunData.fireConstraints.canFireWhileSprinting = (FireConstraints.ActionFireMode)mods.CanFireWhileSprinting;
         log.LogInfo($"Modified {gunName} canFireWhileSprinting: Original {originalSprint}, New {gunData.fireConstraints.canFireWhileSprinting}");
@@ -201,12 +178,10 @@ static class Patches
         gunData.fireConstraints.canAimWhileReloading = mods.CanAimWhileReloading != 0;
         log.LogInfo($"Modified {gunName} canAimWhileReloading: Original {originalAimReload}, New {gunData.fireConstraints.canAimWhileReloading}");
 
-        // Set custom CanAimWhileSprinting on the component
         modGunData.CanAimWhileSprinting = mods.CanAimWhileSprinting;
         log.LogInfo($"Modified {gunName} canAimWhileSprinting (custom): New {mods.CanAimWhileSprinting}");
 
-        // Override lockSprinting to allow aiming while sprinting if enabled (reflection for private field)
-        bool lockSprintingValue = (mods.CanAimWhileSprinting != 1); // false if allowing (assuming 1 == CanPerformDuring)
+        bool lockSprintingValue = (mods.CanAimWhileSprinting != 1);
         lockSprintingField.SetValue(gunPrefab, lockSprintingValue);
         log.LogInfo($"Modified {gunName} lockSprinting: New {lockSprintingValue}");
 
@@ -229,7 +204,7 @@ static class Patches
                 }
             }
         }
-        return true; // Run original
+        return true;
     }
 
     public static void OnStartAimPostfix(Gun __instance)
@@ -247,7 +222,7 @@ static class Patches
                     resumeSprintMethod.Invoke(player, null);
                 }
             }
-            modGunData.WasSprinting = false; // Reset
+            modGunData.WasSprinting = false;
         }
     }
 
@@ -268,12 +243,12 @@ static class Patches
                     if (isAimInputHeld)
                     {
                         __result = true;
-                        return false; // Skip original to avoid stop sprint
+                        return false;
                     }
                 }
             }
         }
-        return true; // Run original
+        return true;
     }
 
     public static bool HandleFiringPrefix(Gun __instance)
@@ -295,21 +270,19 @@ static class Patches
                         {
                             fireMethod.Invoke(__instance, null);
                         }
-                        return false; // Skip original to avoid delay
+                        return false;
                     }
                 }
             }
         }
-        return true; // Run original
+        return true;
     }
 
-    // New prefix for EnableWallrun getter
     public static bool EnableWallrunGetPrefix(Player __instance, ref bool __result)
     {
         if (!__instance.IsLocalPlayer) return true;
 
         __result = true;
-        //log.LogInfo("Forced EnableWallrun to true for local player.");
-        return false; // Skip original getter
+        return false;
     }
 }
